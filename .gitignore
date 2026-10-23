@@ -1,0 +1,8 @@
+# Build objects and binaries
+*.o
+tt-media-bot
+bin_test
+
+# Local configs and caches
+favorites.json
+*.log

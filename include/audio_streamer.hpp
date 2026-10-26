@@ -4,9 +4,18 @@
 #include <atomic>
 #include <mutex>
 #include <functional>
-#include <vector>
 #include "TeamTalk.h"
 #include "types.hpp"
+
+#ifdef _WIN32
+#include <windows.h>
+typedef HANDLE process_pid_t;
+#define INVALID_PROCESS_PID nullptr
+#else
+#include <sys/types.h>
+typedef pid_t process_pid_t;
+#define INVALID_PROCESS_PID -1
+#endif
 
 class AudioStreamer {
 public:
@@ -27,6 +36,23 @@ public:
     void set_speed(float spd);
     float get_speed() const;
 
+    // Audio effects
+    void set_bass_boost(int level_db);
+    int get_bass_boost() const;
+
+    void set_nightcore(bool enable);
+    bool get_nightcore() const;
+
+    void set_slowed(bool enable);
+    bool get_slowed() const;
+
+    void set_8d(bool enable);
+    bool get_8d() const;
+
+    void reset_effects();
+    std::string get_effects_description(const std::string& lang = "ru") const;
+    std::string build_filter_chain() const;
+
     bool is_playing() const;
     bool is_paused() const;
     int get_position() const;
@@ -41,6 +67,10 @@ private:
     std::atomic<bool> stop_requested_{false};
     std::atomic<int> volume_{100};
     std::atomic<float> speed_{1.0f};
+    std::atomic<int> bass_boost_{0};
+    std::atomic<bool> nightcore_{false};
+    std::atomic<bool> slowed_{false};
+    std::atomic<bool> audio_8d_{false};
     std::atomic<int> position_sec_{0};
     std::atomic<int> stream_id_counter_{1};
 
@@ -49,8 +79,10 @@ private:
 
     std::thread worker_thread_;
     std::function<void()> on_finished_;
-    pid_t current_pid_{-1};
+    process_pid_t current_pid_{INVALID_PROCESS_PID};
 
     void streaming_loop(Track track, int start_offset_sec, int stream_id);
     void kill_process();
+    void apply_filter_change();
+    void restart_stream(const Track& track, int offset_sec);
 };

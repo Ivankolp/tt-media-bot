@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "TeamTalk.h"
 #include "config.hpp"
+#include "database.hpp"
 #include "youtube_resolver.hpp"
 #include "audio_streamer.hpp"
 #include "playlist_manager.hpp"
@@ -17,12 +18,14 @@ public:
     bool init();
     void run();
     void stop();
+    void restart_process();
 
 private:
     BotConfig config_;
     TTInstance* tt_{nullptr};
     std::atomic<bool> running_{false};
 
+    std::unique_ptr<Database> db_;
     std::unique_ptr<YouTubeResolver> resolver_;
     std::unique_ptr<AudioStreamer> streamer_;
     std::unique_ptr<PlaylistManager> playlist_;
@@ -30,6 +33,7 @@ private:
     std::unordered_map<int, std::vector<Track>> pending_searches_;
     int search_limit_{5};
     bool voice_transmission_enabled_{true};
+    bool locked_{false};
 
     void connect_and_login();
     void process_event(const TTMessage& msg);
@@ -38,10 +42,14 @@ private:
     void send_message(int to_user_id, int channel_id, const std::string& text);
     void reply(const TextMessage& original, const std::string& text);
     bool is_admin(const std::string& username) const;
+    bool is_banned(const std::string& username) const;
+    bool is_command_blocked(const std::string& cmd) const;
 
     // Track playback helper
     void play_track(const Track& track, const TextMessage* reply_to = nullptr);
+    bool get_next_track(Track& next);
     void on_track_finished();
+    int get_gender_mode() const;
 
     // User commands
     void cmd_play(const TextMessage& msg, const std::string& arg);
@@ -53,6 +61,11 @@ private:
     void cmd_seek(const TextMessage& msg, int delta_sec);
     void cmd_volume(const TextMessage& msg, const std::string& arg);
     void cmd_speed(const TextMessage& msg, const std::string& arg);
+    void cmd_bass(const TextMessage& msg, const std::string& arg);
+    void cmd_nightcore(const TextMessage& msg, const std::string& arg);
+    void cmd_slowed(const TextMessage& msg, const std::string& arg);
+    void cmd_8d(const TextMessage& msg, const std::string& arg);
+    void cmd_effects(const TextMessage& msg, const std::string& arg);
     void cmd_mode(const TextMessage& msg, const std::string& arg);
     void cmd_favorites(const TextMessage& msg, const std::string& arg);
     void cmd_recents(const TextMessage& msg);
@@ -66,13 +79,30 @@ private:
     void cmd_select_search(const TextMessage& msg, const std::string& arg);
     void cmd_select_search_count(const TextMessage& msg, const std::string& arg);
     void cmd_join_channel(const TextMessage& msg, const std::string& arg);
+    void cmd_seek_timecode(const TextMessage& msg, const std::string& arg);
+    void cmd_download(const TextMessage& msg, const std::string& arg);
+    void cmd_service(const TextMessage& msg, const std::string& arg);
     void cmd_help(const TextMessage& msg, const std::string& arg);
     void cmd_about(const TextMessage& msg);
 
     // Admin commands
+    void cmd_cookies(const TextMessage& msg, const std::string& arg);
     void cmd_change_nick(const TextMessage& msg, const std::string& arg);
     void cmd_change_status(const TextMessage& msg, const std::string& arg);
+    void cmd_change_gender(const TextMessage& msg, const std::string& arg);
+    void cmd_change_language(const TextMessage& msg, const std::string& arg);
     void cmd_voice_toggle(const TextMessage& msg, const std::string& arg);
     void cmd_channel_msg_toggle(const TextMessage& msg, const std::string& arg);
     void cmd_get_channel_id(const TextMessage& msg);
+    void cmd_block_command(const TextMessage& msg, const std::string& arg);
+    void cmd_lock_bot(const TextMessage& msg, const std::string& arg);
+    void cmd_admin_users(const TextMessage& msg, const std::string& arg);
+    void cmd_banned_users(const TextMessage& msg, const std::string& arg);
+    void cmd_save_config(const TextMessage& msg);
+    void cmd_clear_cache(const TextMessage& msg);
+
+    // Localization helper
+    std::string tr(const std::string& ru, const std::string& en) const {
+        return (config_.language == "en") ? en : ru;
+    }
 };

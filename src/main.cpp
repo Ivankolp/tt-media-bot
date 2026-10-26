@@ -4,6 +4,7 @@
 #include "logger.hpp"
 
 static Bot* g_bot = nullptr;
+char** g_app_argv = nullptr;
 
 void signal_handler(int sig) {
     LOG_INFO("\n[Main] Caught signal %d, shutting down cleanly...", sig);
@@ -13,6 +14,7 @@ void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
+    g_app_argv = argv;
     std::string config_path = "config.json";
     if (argc > 1) {
         config_path = argv[1];
@@ -20,7 +22,7 @@ int main(int argc, char* argv[]) {
 
     LOG_INFO("===========================================");
     LOG_INFO("   TeamTalk Native Media Daemon (C++)      ");
-    LOG_INFO("   Author: Ivan (Ivankolp)                 ");
+    LOG_INFO("   Author: Flastik (@flastik_blog)         ");
     LOG_INFO("===========================================");
 
     BotConfig cfg = BotConfig::load_from_file(config_path);

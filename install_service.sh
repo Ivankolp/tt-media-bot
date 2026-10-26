@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # TeamTalk Native Media Daemon - Systemd Service Installer
-# Author: Ivan (Ivankolp) | Space Project (@Space_project_fl) | @flastik_blog
+# Author: Flastik | @flastik_blog
 # ==============================================================================
 
 set -e
@@ -19,7 +19,7 @@ echo "[*] Creating systemd service at ${SERVICE_PATH}..."
 
 cat <<EOF > "${SERVICE_PATH}"
 [Unit]
-Description=TeamTalk Native Media Daemon (C++ Edition by Ivan)
+Description=TeamTalk Native Media Daemon (C++ Edition by Flastik)
 After=network.target teamtalk.service
 Wants=network.target
 
@@ -28,8 +28,10 @@ Type=simple
 User=root
 WorkingDirectory=${DIR}
 ExecStart=${DIR}/run.sh
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartPreventExitStatus=0
+RestartForceExitStatus=42
+RestartSec=1s
 LimitNOFILE=65535
 StandardOutput=journal
 StandardError=journal
@@ -41,7 +43,7 @@ EOF
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 
-echo "[✓] Service ${SERVICE_NAME} installed and enabled!"
-echo "[*] You can start it with:   systemctl start ${SERVICE_NAME}"
-echo "[*] Check status with:       systemctl status ${SERVICE_NAME}"
-echo "[*] View live logs with:     journalctl -u ${SERVICE_NAME} -f"
+echo "[OK] Service ${SERVICE_NAME} installed and enabled."
+echo "[*] Start with:   systemctl start ${SERVICE_NAME}"
+echo "[*] Status with:  systemctl status ${SERVICE_NAME}"
+echo "[*] Logs with:    journalctl -u ${SERVICE_NAME} -f"

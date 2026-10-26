@@ -1,139 +1,186 @@
-# 🎵 TeamTalk Native Media Bot (C++ Edition)
+> [!NOTE]
+> **Русскоязычным пользователям:** Документация на русском языке доступна в файле [README_RU.md](README_RU.md)
 
-Высокопроизводительный нативный медиа-бот для TeamTalk 5, переписанный с нуля на C++17.
-Полная замена громоздким Python-ботам (TTMediaBot): без PulseAudio, без MPV, без виртуальных звуковых карт и без костылей.
+# TeamTalk Native Media Bot (C++ Edition)
 
-**Автор и создатель:** Иван ([@Ivankolp](https://github.com/Ivankolp))  
-**Проект:** Space Project ([@Space_project_fl](https://t.me/Space_project_fl))  
-**Telegram-блог:** [@flastik_blog](https://t.me/flastik_blog)  
+High-performance native media bot for TeamTalk 5 written in C++17.  
+Plays audio from YouTube and direct streams, supports audio effects, playback queues, favorites, and channel file uploads.
 
----
-
-## ⚡️ Почему нативный C++?
-
-| Характеристика | Старый Python + PulseAudio + MPV | Новый C++ Native Daemon |
-|---|---|---|
-| **Потребление ОЗУ** | 250 – 350 МБ на экземпляр | **~10–14 МБ приватной ОЗУ** (~38 МБ с shared lib) |
-| **Количество процессов** | 4 процесса (Python + pulseaudio + mpv + bridge) | **1 компактный процесс** + легкий декодер |
-| **Звуковая подсистема** | PulseAudio, null-sink, module-loopback | **Прямой инжект PCM в ядро TeamTalk** |
-| **Задержка старта трека** | 4 – 7 секунд | **~0.8 – 1.2 секунды** |
-| **Размер бинарника** | Десятки МБ библиотек Python | **~380 КБ (stripped binary)** |
-| **Масштабируемость** | 2-3 бота забивали 1 ГБ RAM | **15-20+ ботов работают на слабом 1 ГБ сервере** |
+**Author:** Flastik  
+**Telegram Blog:** [@flastik_blog](https://t.me/flastik_blog)  
+**Russian Documentation:** [README_RU.md](README_RU.md)
 
 ---
 
-## 🚀 Архитектура и Звуковой Движок
+## Installation & Setup
 
-1. **Direct PCM Injection:**
-   Бот не создает никаких аудиоустройств в ОС. Он читает поток через легковесный пайп `ffmpeg` (48000 Hz, stereo, s16le) и скармливает 20-миллисекундные аудиофреймы напрямую в движок TeamTalk через API функцию `TT_InsertAudioBlock`.
-2. **Аппаратная синхронизация времени:**
-   Фреймы отправляются со строгой калибровкой по таймеру высокой точности (`std::chrono::steady_clock`), гарантируя кристально чистый звук без заиканий, дропов и буферизации.
-3. **Двухуровневый резолвер треков:**
-   - Быстрый путь: локальный HTTP-мост к YouTube Music / YouTube API (ответ за 200–400 мс).
-   - Автономный путь: встроенный вызов `yt-dlp` для работы на любом Linux-сервере без дополнительных сервисов.
-4. **Управление очередью и памятью:**
-   Очередь воспроизведения, история (30 последних треков), постоянный список избранного (`favorites.json`) и режимы воспроизведения (`Normal`, `RepeatOne`, `RepeatAll`, `Random`).
-
----
-
-## 🛠 Быстрый старт
-
-### Требования:
-- Linux x86_64 (Ubuntu 20.04+, Debian 11+, Alpine/Arch)
-- `g++` (с поддержкой C++17) и `make`
+### Requirements:
+- Linux x86_64 or ARM64
+- C++17 compiler (`g++`) and `make`
 - `ffmpeg`
-- `libcurl`
+- `libcurl4-openssl-dev`, `libsqlite3-dev`, `nlohmann-json3-dev`
+- `Node.js` v18+
 
-### 1. Сборка
+### 1. Build
 ```bash
 make -j$(nproc)
 ```
 
-### 2. Настройка `config.json`
-Скопируйте пример конфига:
+### 2. Configuration
+Copy the configuration template:
 ```bash
 cp config.example.json config.json
 ```
-И укажите данные вашего сервера TeamTalk 5:
+
+Edit your TeamTalk server credentials in `config.json`:
 ```json
 {
-  "host": "127.0.0.1",
-  "tcp_port": 16815,
-  "udp_port": 16815,
-  "encrypted": false,
-  "username": "bot_native",
-  "password": "your_password",
-  "nickname": "TTMediaBot-Native",
-  "status_message": "C++ Native Media Bot by Ivan (Ivankolp)",
-  "channel_path": "/",
-  "channel_password": "",
-  "default_volume": 100,
-  "bridge_url": "http://127.0.0.1:4417",
-  "channel_messages": true,
-  "admin_users": ["admin", "Ivan", "Ivankolp"]
+    "config_version": 0,
+    "general": {
+        "language": "ru",
+        "send_channel_messages": false,
+        "cache_file_name": "bot.db",
+        "blocked_commands": [],
+        "delete_uploaded_files_after": 300,
+        "time_format": "%H:%M",
+        "status": "Send h for help",
+        "start_commands": []
+    },
+    "player": {
+        "default_volume": 25,
+        "max_volume": 100,
+        "volume_fading": false,
+        "volume_fading_interval": 0.005,
+        "seek_step": 10
+    },
+    "teamtalk": {
+        "hostname": "127.0.0.1",
+        "tcp_port": 16815,
+        "udp_port": 16815,
+        "encrypted": false,
+        "nickname": "Media Bot",
+        "status": "Send h for help",
+        "gender": "n",
+        "username": "bot_native",
+        "password": "your_password",
+        "channel": "/",
+        "channel_password": "",
+        "reconnection_attempts": -1,
+        "reconnection_timeout": 5,
+        "users": {
+            "admins": [
+                "admin"
+            ],
+            "banned_users": []
+        }
+    },
+    "services": {
+        "default_service": "yt",
+        "bridge_url": "http://127.0.0.1:4417",
+        "yt": {
+            "enabled": true,
+            "search_results": 1
+        },
+        "ytm": {
+            "enabled": true,
+            "search_results": 1
+        }
+    }
 }
 ```
 
-### 3. Запуск
+### 3. Launch
 ```bash
 ./run.sh
 ```
 
-### 4. Установка как системный сервис (автозапуск systemd)
+### 4. Automatic Systemd Installation
+To automatically install dependencies, set up background services, and compile:
 ```bash
-sudo ./install_service.sh
+sudo ./install.sh
 ```
 
 ---
 
-## 📖 Список Команд
+## Commands
 
-Команды можно отправлять как в канал, так и в личные сообщения боту (с префиксом `!` или `/`, либо просто текстом).
+Commands can be sent in private messages to the bot. Supported prefixes: `!`, `/`, or without prefix.
 
-### Основные команды:
-- `p [запрос / ссылка]` — Начать воспроизведение, поставить на паузу или возобновить.
-- `u <прямая ссылка>` — Воспроизвести прямую ссылку на аудиопоток, радиостанцию или файл.
-- `s` — Остановить воспроизведение и очистить очередь.
-- `n` — Следующий трек из очереди.
-- `b` — Предыдущий трек из истории.
-- `c` — Текущий трек, позиция, режим и громкость.
-- `sb [сек]` — Перемотка назад (по умолчанию 10 сек).
-- `sf [сек]` — Перемотка вперед (по умолчанию 10 сек).
-- `v [0-100]` — Уровень громкости.
-- `sp [0.5-2.0]` — Скорость воспроизведения (темп без изменения питча).
-- `m [normal / single / all / random]` — Режим воспроизведения.
-- `f` — Список избранных треков.
-- `f add` — Добавить играющий трек в избранное.
-- `f del <номер>` — Удалить трек из избранного.
-- `r` — История недавно игравших треков.
-- `gl` — Получить веб-ссылку на текущий трек.
+### Playback & Controls:
+| Command | Arguments | Description |
+|---|---|---|
+| `p` | `[query / url]` | Play, pause, or resume track |
+| `u` | `<stream url>` | Play direct audio stream, web radio, or file URL |
+| `s` | - | Stop playback |
+| `n` | - | Next track in queue or playlist |
+| `b` | - | Previous track from history |
+| `c` | - | Current track info, elapsed time, total duration, volume |
+| `seek` | `<MM:SS>` | Seek to specific timecode (e.g. `seek 02:45`) |
+| `st` | `<seconds>` | Seek to exact position in seconds (e.g. `st 120`) |
+| `sb` | `[seconds]` | Rewind (default: 10 seconds) |
+| `sf` | `[seconds]` | Fast-forward (default: 10 seconds) |
+| `v` | `[0-100]` | Set volume level |
+| `sp` | `[0.5-2.0]` | Playback speed |
+| `bb` | `[1-20 / on / off]` | Bass Boost (0-20 dB) |
+| `nc` | `[on / off]` | Nightcore mode (pitch up, speed 1.25x) |
+| `slow` | `[on / off]` | Slowed mode (pitch down, tempo 0.85x) |
+| `8d` | `[on / off]` | 8D audio circular stereo effect |
+| `fx` | `[off / reset]` | Show active audio effects or reset them |
+| `dl` | `[query / url]` | Download track to MP3 and upload to channel files |
+| `m` | `[normal / single / all / random]` | Playback loop mode |
+| `f` | - | List favorite tracks |
+| `f +` / `f add` | - | Add current track to favorites |
+| `f - <id>` | `<id>` | Remove track from favorites |
+| `r` | - | Recent tracks history |
+| `gl` | - | Get web URL of the current playing track |
 
-### Управление очередью:
-- `qa <запрос>` — Добавить трек в конец очереди.
-- `ql` — Показать текущую очередь треков.
-- `qr <номер>` — Удалить трек из очереди по его номеру.
-- `qc` — Полностью очистить очередь.
+### Queue:
+| Command | Arguments | Description |
+|---|---|---|
+| `qa` | `<query / url>` | Add track to the end of queue |
+| `ql` | - | View current queue |
+| `qr` | `<index>` | Remove track from queue by number |
+| `qc` | - | Clear queue |
+| `qs` | - | Skip current queued track |
 
-### Поиск треков:
-- `sr <запрос>` — Расширенный поиск (показывает список вариантов).
-- `sl <номер>` — Выбрать трек из найденных результатов.
-- `slc <1-15>` — Задать количество результатов поиска.
+### Search:
+| Command | Arguments | Description |
+|---|---|---|
+| `sr` | `<query>` | Search tracks by query |
+| `sl` | `<index>` | Play track from search results |
+| `slc` | `<1-15>` | Set number of search results to display |
 
-### Навигация и инфо:
-- `jc <ID или имя канала>` — Переместить бота в указанный канал.
-- `h` — Справка по командам.
-- `a` — Информация об авторе и версии бота.
+### Channel & Navigation:
+| Command | Arguments | Description |
+|---|---|---|
+| `come` / `go` / `jc` | - | Bot joins your current channel |
+| `jc` | `<ID / name> [pwd]` | Join specified channel |
+| `sv` | `[yt / ytm]` | Switch default music service |
+| `h` | - | Show command help |
+| `a` | - | About developer |
 
-### Админские команды (только для пользователей из `admin_users`):
-- `cn <новый ник>` — Сменить никнейм бота на лету.
-- `cs <новый статус>` — Сменить статусное сообщение бота.
-- `va` — Включить / выключить передачу голоса.
-- `cm` — Включить / выключить текстовые ответы в канал.
-- `gcid` — Показать ID текущего канала.
-- `q` — Завершить процесс бота.
-- `rs` — Переподключиться к серверу.
+### Admin Commands:
+| Command | Arguments | Description |
+|---|---|---|
+| `cookies` | `[content]` | View or update `cookies.txt` via PM |
+| `cn` | `<name>` | Change bot nickname |
+| `cs` | `<status>` | Change bot status message |
+| `cg` | `<m / f / n>` | Change bot gender |
+| `cl` | `<ru / en>` | Change bot language setting |
+| `cm` | - | Toggle channel public announcements |
+| `va` | - | Toggle voice transmission mode |
+| `bc` | `[add / del / list]` | Manage blocked commands for regular users |
+| `ua` | `[add / del / list]` | Manage bot administrators |
+| `ub` | `[add / del / list]` | Manage banned users list |
+| `l` | - | Lock bot (admins only) |
+| `sc` | - | Save current configuration to `config.json` |
+| `cc` | - | Clear SQLite cache and history |
+| `gcid` | - | Get current channel ID |
+| `rs` | - | Restart bot process |
+| `q` | - | Shut down bot process |
 
 ---
 
-## 📄 Лицензия
-Разработано Иваном ([Ivankolp](https://github.com/Ivankolp)). Распространяется свободно для сообщества TeamTalk.
+## Author
+Developed by: **Flastik**  
+Telegram: [@flastik_blog](https://t.me/flastik_blog)

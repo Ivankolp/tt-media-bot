@@ -1,16 +1,60 @@
 {
-  "host": "127.0.0.1",
-  "tcp_port": 16815,
-  "udp_port": 16815,
-  "encrypted": false,
-  "username": "bot_native",
-  "password": "your_password_here",
-  "nickname": "TTMediaBot-Native",
-  "status_message": "C++ Native Media Bot by Ivan (Ivankolp)",
-  "channel_path": "/",
-  "channel_password": "",
-  "default_volume": 100,
-  "bridge_url": "http://127.0.0.1:4417",
-  "channel_messages": true,
-  "admin_users": ["admin", "Ivan", "Ivankolp"]
+    "config_version": 0,
+    "general": {
+        "language": "ru",
+        "send_channel_messages": true,
+        "cache_file_name": "bot.db",
+        "blocked_commands": [],
+        "delete_uploaded_files_after": 300,
+        "time_format": "%H:%M",
+        "status": "Отправьте h для справки",
+        "start_commands": []
+    },
+    "sound_devices": {
+        "output_device": 1,
+        "input_device": 0
+    },
+    "player": {
+        "default_volume": 25,
+        "max_volume": 100,
+        "volume_fading": false,
+        "volume_fading_interval": 0.005,
+        "seek_step": 10
+    },
+    "teamtalk": {
+        "hostname": "127.0.0.1",
+        "tcp_port": 16815,
+        "udp_port": 16815,
+        "encrypted": false,
+        "nickname": "Музыкальный Бот",
+        "status": "Отправьте h для справки",
+        "gender": "n",
+        "username": "bot_native",
+        "password": "your_password_here",
+        "channel": "/",
+        "channel_password": "",
+        "reconnection_attempts": -1,
+        "reconnection_timeout": 5,
+        "users": {
+            "admins": [
+                "admin",
+                "flastik",
+                "Flastik",
+                "Ivankolp"
+            ],
+            "banned_users": []
+        }
+    },
+    "services": {
+        "default_service": "yt",
+        "bridge_url": "http://127.0.0.1:4417",
+        "yt": {
+            "enabled": true,
+            "search_results": 1
+        },
+        "ytm": {
+            "enabled": true,
+            "search_results": 1
+        }
+    }
 }

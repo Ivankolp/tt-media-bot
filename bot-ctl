@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# TeamTalk Native Multi-Bot Controller (bot-ctl)
+# Author: Flastik | @flastik_blog
+# ==============================================================================
+
+set -e
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+CONFIG_DIR="${DIR}/configs"
+DATA_DIR="${DIR}/data"
+
+mkdir -p "${CONFIG_DIR}"
+mkdir -p "${DATA_DIR}"
+
+cmd="${1:-}"
+name="${2:-}"
+
+usage() {
+    echo "=========================================================="
+    echo "  TeamTalk Multi-Bot Controller (C++ Edition by Flastik)  "
+    echo "=========================================================="
+    echo "Использование: ./bot-ctl <команда> [имя_бота]"
+    echo ""
+    echo "Команды:"
+    echo "  add <имя>         - Создать нового бота (конфиг configs/<имя>.json)"
+    echo "  start <имя>       - Запустить бота"
+    echo "  stop <имя>        - Остановить бота"
+    echo "  restart <имя>     - Перезапустить бота"
+    echo "  enable <имя>      - Включить автозапуск бота при старте системы"
+    echo "  disable <имя>     - Отключить автозапуск бота"
+    echo "  status            - Показать статус всех ботов и потребление RAM"
+    echo "  start-all         - Запустить всех созданных ботов"
+    echo "  stop-all          - Остановить всех ботов"
+    echo "  logs <имя>        - Показать живой лог бота"
+    echo "  delete <имя>      - Удалить бота и его конфиг"
+    echo "=========================================================="
+    exit 1
+}
+
+if [ -z "$cmd" ]; then
+    usage
+fi
+
+case "$cmd" in
+    add|create)
+        if [ -z "$name" ]; then
+            echo "[x] Ошибка: укажите имя нового бота (например: ./bot-ctl add rock_bot)"
+            exit 1
+        fi
+        cfg_file="${CONFIG_DIR}/${name}.json"
+        if [ -f "$cfg_file" ]; then
+            echo "[!] Бот с именем '${name}' уже существует (${cfg_file})"
+            exit 0
+        fi
+
+        # Create from existing config or example
+        tmpl="${DIR}/config.json"
+        [ ! -f "$tmpl" ] && tmpl="${DIR}/config.example.json"
+
+        if command -v jq >/dev/null 2>&1; then
+            jq --arg name "$name" \
+               '.teamtalk.username = $name | .teamtalk.nickname = ("Бот " + $name) | .general.cache_file_name = ("data/" + $name + ".db")' \
+               "$tmpl" > "$cfg_file"
+        else
+            sed -e "s/\"bot_native\"/\"${name}\"/g" \
+                -e "s/\"Музыкальный Бот\"/\"Бот ${name}\"/g" \
+                -e "s/\"bot.db\"/\"data\/${name}.db\"/g" \
+                "$tmpl" > "$cfg_file"
+        fi
+
+        echo "[OK] Бот '${name}' успешно создан!"
+        echo "Конфиг: ${cfg_file}"
+        echo "База данных: data/${name}.db"
+        echo ""
+        echo "Для запуска выполните: ./bot-ctl start ${name}"
+        ;;
+
+    start)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl start <имя>"
+            exit 1
+        fi
+        cfg_file="${CONFIG_DIR}/${name}.json"
+        if [ ! -f "$cfg_file" ]; then
+            echo "[x] Ошибка: конфиг ${cfg_file} не найден. Сначала создайте бота: ./bot-ctl add ${name}"
+            exit 1
+        fi
+        systemctl start "tt-bot@${name}"
+        sleep 1
+        systemctl status "tt-bot@${name}" --no-pager -l
+        ;;
+
+    stop)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl stop <имя>"
+            exit 1
+        fi
+        systemctl stop "tt-bot@${name}"
+        echo "[OK] Бот '${name}' остановлен"
+        ;;
+
+    restart)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl restart <имя>"
+            exit 1
+        fi
+        systemctl restart "tt-bot@${name}"
+        sleep 1
+        systemctl status "tt-bot@${name}" --no-pager -l
+        ;;
+
+    enable)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl enable <имя>"
+            exit 1
+        fi
+        systemctl enable "tt-bot@${name}"
+        echo "[OK] Автозапуск для '${name}' включен"
+        ;;
+
+    disable)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl disable <имя>"
+            exit 1
+        fi
+        systemctl disable "tt-bot@${name}"
+        echo "[OK] Автозапуск для '${name}' отключен"
+        ;;
+
+    start-all)
+        echo "[*] Запуск всех ботов..."
+        for f in "${CONFIG_DIR}"/*.json; do
+            [ ! -f "$f" ] && continue
+            bname="$(basename "$f" .json)"
+            echo "[+] Запускаю: ${bname}..."
+            systemctl start "tt-bot@${bname}"
+        done
+        echo "[OK] Все боты запущены"
+        ;;
+
+    stop-all)
+        echo "[*] Остановка всех ботов..."
+        for f in "${CONFIG_DIR}"/*.json; do
+            [ ! -f "$f" ] && continue
+            bname="$(basename "$f" .json)"
+            echo "[-] Останавливаю: ${bname}..."
+            systemctl stop "tt-bot@${bname}" 2>/dev/null || true
+        done
+        echo "[OK] Все боты остановлены"
+        ;;
+
+    status)
+        echo "=========================================================================================="
+        printf "%-16s %-12s %-8s %-10s %-12s %-20s\n" "NAME" "STATUS" "PID" "RAM" "AUTOSTART" "LOGIN (CHANNEL)"
+        echo "------------------------------------------------------------------------------------------"
+        found=0
+        for f in "${CONFIG_DIR}"/*.json; do
+            [ ! -f "$f" ] && continue
+            found=1
+            bname="$(basename "$f" .json)"
+            svc="tt-bot@${bname}.service"
+
+            active_state="$(systemctl is-active "$svc" 2>/dev/null || true)"
+            [ -z "$active_state" ] && active_state="inactive"
+
+            enabled_state="$(systemctl is-enabled "$svc" 2>/dev/null || true)"
+            [ -z "$enabled_state" ] && enabled_state="disabled"
+
+            pid="-"
+            ram="-"
+            if [ "$active_state" = "active" ]; then
+                pid="$(systemctl show -p MainPID --value "$svc" 2>/dev/null || echo "-")"
+                if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+                    rss_kb="$(ps -o rss= -p "$pid" 2>/dev/null || echo "0")"
+                    rss_kb="${rss_kb// /}"
+                    if [ -n "$rss_kb" ] && [ "$rss_kb" -gt 0 ] 2>/dev/null; then
+                        ram="$(( rss_kb / 1024 )) MB"
+                    fi
+                fi
+                status_str="ACTIVE"
+            else
+                status_str="STOPPED"
+            fi
+
+            # Read login/channel from config
+            login_info=""
+            if command -v jq >/dev/null 2>&1; then
+                u="$(jq -r '.teamtalk.username // empty' "$f" 2>/dev/null)"
+                c="$(jq -r '.teamtalk.channel // empty' "$f" 2>/dev/null)"
+                login_info="${u} (${c})"
+            fi
+
+            printf "%-16s %-12s %-8s %-10s %-12s %-20s\n" "${bname}" "${status_str}" "${pid}" "${ram}" "${enabled_state}" "${login_info}"
+        done
+
+        if [ "$found" -eq 0 ]; then
+            echo "Нет созданных ботов в папке configs/. Создайте первого: ./bot-ctl add bot1"
+        fi
+        echo "=========================================================================================="
+        ;;
+
+    logs)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl logs <имя>"
+            exit 1
+        fi
+        journalctl -u "tt-bot@${name}" -f -n 50
+        ;;
+
+    delete|remove)
+        if [ -z "$name" ]; then
+            echo "[x] Укажите имя бота: ./bot-ctl delete <имя>"
+            exit 1
+        fi
+        systemctl stop "tt-bot@${name}" 2>/dev/null || true
+        systemctl disable "tt-bot@${name}" 2>/dev/null || true
+        rm -f "${CONFIG_DIR}/${name}.json"
+        echo "[OK] Бот '${name}' остановлен и удален из configs/"
+        ;;
+
+    *)
+        usage
+        ;;
+esac

@@ -4,5 +4,18 @@ tt-media-bot
 bin_test
 
 # Local configs and caches
+config.json
+configs/*.json
+!configs/.gitkeep
+data/*.db
+data/*.json
+!data/.gitkeep
 favorites.json
 *.log
+bot.db
+bot.db-*
+*.db-wal
+*.db-shm
+data/*.db-*
+bridge/node_modules
+bridge/bridge_cache.json

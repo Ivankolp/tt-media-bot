@@ -1,8 +1,8 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -Iinclude
-LDFLAGS = -lstdc++ -Llib -lTeamTalk5 -lcurl -lpthread -ldl -Wl,-rpath,'$$ORIGIN/lib'
+LDFLAGS = -lstdc++ -Llib -lTeamTalk5 -lcurl -lsqlite3 -lpthread -ldl -Wl,-rpath,'$$ORIGIN/lib'
 
-SRCS = src/main.cpp src/bot.cpp src/audio_streamer.cpp src/youtube_resolver.cpp src/playlist_manager.cpp
+SRCS = src/main.cpp src/bot.cpp src/database.cpp src/audio_streamer.cpp src/youtube_resolver.cpp src/playlist_manager.cpp
 OBJS = $(SRCS:.cpp=.o)
 TARGET = tt-media-bot
 

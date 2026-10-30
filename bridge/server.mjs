@@ -168,15 +168,10 @@ async function getSession(cookieFile) {
 
   const contextPromise = (async () => {
     const cookie = await netscapeCookiesToHeader(cookieFile);
-    const webSession = await getWebSessionData(cookie);
     const session = await Innertube.create({
       cookie: cookie || undefined,
-      user_agent: USER_AGENT,
-      client_type: ClientType.MWEB,
-      visitor_data: webSession.visitorData,
-      cache: new UniversalCache(true),
       enable_session_cache: true,
-      generate_session_locally: true,
+      generate_session_locally: false,
       retrieve_player: true
     });
     return { session };
@@ -196,9 +191,8 @@ async function getSearchSession() {
   if (!searchSessionPromise) {
     searchSessionPromise = Innertube.create({
       client_type: ClientType.WEB,
-      cache: new UniversalCache(true),
       enable_session_cache: true,
-      generate_session_locally: true,
+      generate_session_locally: false,
       retrieve_player: false,
       fail_fast: true
     }).catch((error) => {
@@ -362,7 +356,10 @@ function formatPayload(format) {
 }
 
 async function getPlayableInfo(session, videoId, client, poToken) {
-  const targetClient = client === 'YTMUSIC' ? ClientType.MWEB : client;
+  let targetClient = client === 'YTMUSIC' ? 'MWEB' : client;
+  if (targetClient === ClientType.TV_EMBEDDED || targetClient === 'TVHTML5_SIMPLY_EMBEDDED_PLAYER') {
+    targetClient = 'TV_EMBEDDED';
+  }
   return session.getBasicInfo(videoId, { client: targetClient, po_token: poToken });
 }
 
@@ -373,11 +370,9 @@ function playabilityDescription(info) {
 }
 
 async function resolveFormat(context, videoId, requestedClient, formatOptions) {
-  // WEB is SABR-only for many videos in 2026. MWEB still exposes classic
-  // adaptive formats and is the preferred web playback client here.
   const clients = requestedClient === 'YTMUSIC'
-    ? ['YTMUSIC', 'MWEB', ClientType.TV_EMBEDDED]
-    : ['MWEB', ClientType.TV_EMBEDDED];
+    ? ['YTMUSIC', 'VISIONOS', 'ANDROID', 'MWEB']
+    : ['VISIONOS', 'ANDROID', 'MWEB'];
   const failures = [];
   const { session } = context;
 
@@ -385,7 +380,7 @@ async function resolveFormat(context, videoId, requestedClient, formatOptions) {
     const clientStartedAt = performance.now();
     try {
       const poStartedAt = performance.now();
-      const poToken = client === ClientType.TV_EMBEDDED
+      const poToken = (client === 'VISIONOS' || client === 'TV_EMBEDDED' || client === ClientType.TV_EMBEDDED)
         ? undefined
         : await getPoToken(videoId);
       console.log(`[youtube-bridge-timing] video=${videoId} client=${client} stage=po-token elapsed_ms=${Math.round(performance.now() - poStartedAt)} available=${Boolean(poToken)}`);
@@ -413,6 +408,20 @@ async function resolveFormat(context, videoId, requestedClient, formatOptions) {
         throw new Error('decipher returned an empty stream URL');
       }
 
+      // Live stream probe: verify googlevideo does not 403
+      try {
+        const probeRes = await fetch(format.url, {
+          method: 'HEAD',
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(3000)
+        });
+        if (probeRes.status === 403) {
+          throw new Error('stream probe HTTP 403 Forbidden');
+        }
+      } catch (probeErr) {
+        if (probeErr.message.includes('403')) throw probeErr;
+      }
+
       console.log(`[youtube-bridge] resolved ${videoId} with client=${client} itag=${format.itag} elapsed_ms=${Math.round(performance.now() - clientStartedAt)}`);
       return { info, format, client };
     } catch (error) {
@@ -429,7 +438,7 @@ async function resolveTrack(body) {
   const startedAt = performance.now();
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
-  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
+  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'VISIONOS';
   const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${videoId}`;
   const cached = resolveCache.get(cacheKey);
   if (cached) {
@@ -464,7 +473,7 @@ async function resolveTrack(body) {
 function invalidateResolution(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
-  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
+  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'VISIONOS';
   const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${videoId}`;
   resolveCache.delete(cacheKey);
   pendingResolutions.delete(cacheKey);
@@ -495,7 +504,7 @@ async function getInfo(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
   const context = await getSession(body.cookie_file);
-  const client = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
+  const client = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'VISIONOS';
   const poToken = await getPoToken(context.poBinding || videoId);
   const info = await getPlayableInfo(context.session, videoId, client, poToken);
   return {
@@ -511,9 +520,8 @@ async function getWebSession(cookieFile) {
     cookie: cookie || undefined,
     user_agent: USER_AGENT,
     client_type: ClientType.WEB,
-    cache: new UniversalCache(true),
     enable_session_cache: true,
-    generate_session_locally: true,
+    generate_session_locally: false,
     retrieve_player: false
   });
 }
@@ -746,7 +754,7 @@ async function getDownloadPlan(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
   const context = await getSession(body.cookie_file);
-  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
+  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'VISIONOS';
 
   if (!body.video) {
     const { format: audio, client } = await resolveFormat(context, videoId, requestedClient, {

@@ -36,7 +36,14 @@ async function loadDiskCache() {
     const raw = await fs.readFile(DISK_CACHE_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed.search) searchCache.load(parsed.search);
-    if (parsed.resolve) resolveCache.load(parsed.resolve);
+    if (parsed.resolve) {
+      for (const entry of parsed.resolve) {
+        if (entry?.v?.url) {
+          entry.v.url = bypassDegradedGgc(entry.v.url);
+        }
+      }
+      resolveCache.load(parsed.resolve);
+    }
     console.log(`[youtube-bridge] Loaded persistent disk cache (search: ${searchCache.size}, resolve: ${resolveCache.size})`);
   } catch (err) {
     if (err?.code !== 'ENOENT') {
@@ -170,6 +177,8 @@ async function getSession(cookieFile) {
     const cookie = await netscapeCookiesToHeader(cookieFile);
     const session = await Innertube.create({
       cookie: cookie || undefined,
+      location: 'NL',
+      lang: 'en',
       enable_session_cache: true,
       generate_session_locally: false,
       retrieve_player: true
@@ -191,6 +200,8 @@ async function getSearchSession() {
   if (!searchSessionPromise) {
     searchSessionPromise = Innertube.create({
       client_type: ClientType.WEB,
+      location: 'NL',
+      lang: 'en',
       enable_session_cache: true,
       generate_session_locally: false,
       retrieve_player: false,
@@ -369,6 +380,38 @@ function playabilityDescription(info) {
   return reason ? `${status}: ${reason}` : status;
 }
 
+function bypassDegradedGgc(streamUrl) {
+  if (!streamUrl || typeof streamUrl !== 'string') return streamUrl;
+  try {
+    const u = new URL(streamUrl);
+    const host = u.hostname;
+    // Degraded GGC edge nodes have ISP hyphens e.g. sn-gvnuxaxjvh-axqz, sn-gvnuxaxjvh-axqd
+    // or known Russian throttling ISP signatures (sn-gvnux, sn-vgqsrn, sn-q4fl6n, sn-h557sn, sn-n8v7kn, etc.)
+    const isDegradedGgc = /sn-[a-z0-9]+-[a-z0-9]+/i.test(host) || /sn-gvnux/i.test(host);
+    if (!isDegradedGgc) return streamUrl;
+
+    const mn = u.searchParams.get('mn');
+    if (!mn) return streamUrl;
+
+    const nodes = mn.split(',').map((s) => s.trim()).filter(Boolean);
+    // Find first fallback node that is a direct Google backbone node (no extra hyphen)
+    const healthyNode = nodes.find((node) => !/sn-[a-z0-9]+-[a-z0-9]+/i.test(node) && !/sn-gvnux/i.test(node));
+    if (healthyNode) {
+      const oldHost = u.hostname;
+      u.hostname = oldHost.replace(/sn-[^.]*/, healthyNode);
+      console.log(`[youtube-bridge] Re-routed degraded GGC host ${oldHost} -> ${u.hostname}`);
+      return u.toString();
+    }
+    const oldHost = u.hostname;
+    u.hostname = oldHost.replace(/sn-[^.]*/, 'sn-u15hn5-5m');
+    console.log(`[youtube-bridge] Forced EU backbone fallback ${oldHost} -> ${u.hostname}`);
+    return u.toString();
+  } catch (err) {
+    console.warn(`[youtube-bridge] bypassDegradedGgc error: ${err.message}`);
+    return streamUrl;
+  }
+}
+
 async function resolveFormat(context, videoId, requestedClient, formatOptions) {
   const clients = requestedClient === 'YTMUSIC'
     ? ['YTMUSIC', 'VISIONOS', 'ANDROID', 'MWEB']
@@ -408,19 +451,7 @@ async function resolveFormat(context, videoId, requestedClient, formatOptions) {
         throw new Error('decipher returned an empty stream URL');
       }
 
-      // Live stream probe: verify googlevideo does not 403
-      try {
-        const probeRes = await fetch(format.url, {
-          method: 'HEAD',
-          headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(3000)
-        });
-        if (probeRes.status === 403) {
-          throw new Error('stream probe HTTP 403 Forbidden');
-        }
-      } catch (probeErr) {
-        if (probeErr.message.includes('403')) throw probeErr;
-      }
+      format.url = bypassDegradedGgc(format.url);
 
       console.log(`[youtube-bridge] resolved ${videoId} with client=${client} itag=${format.itag} elapsed_ms=${Math.round(performance.now() - clientStartedAt)}`);
       return { info, format, client };
@@ -442,6 +473,9 @@ async function resolveTrack(body) {
   const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${videoId}`;
   const cached = resolveCache.get(cacheKey);
   if (cached) {
+    if (cached.url) {
+      cached.url = bypassDegradedGgc(cached.url);
+    }
     console.log(`[youtube-bridge] resolve cache hit ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${resolveCache.size}`);
     return cached;
   }
@@ -518,6 +552,8 @@ async function getWebSession(cookieFile) {
   const cookie = await netscapeCookiesToHeader(cookieFile);
   return await Innertube.create({
     cookie: cookie || undefined,
+    location: 'NL',
+    lang: 'en',
     user_agent: USER_AGENT,
     client_type: ClientType.WEB,
     enable_session_cache: true,

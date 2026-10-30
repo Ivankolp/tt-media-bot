@@ -319,8 +319,10 @@ void AudioStreamer::streaming_loop(Track track, int start_offset_sec, int stream
 
     std::string cmd = "ffmpeg.exe -y";
     if (start_offset_sec > 0) cmd += " -ss " + std::to_string(start_offset_sec);
-    cmd += " -probesize 32768 -analyzeduration 100000 -fflags nobuffer+fastseek -flags low_delay";
-    cmd += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"" + track.stream_url + "\"";
+    cmd += " -probesize 1048576 -analyzeduration 2000000";
+    cmd += " -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_on_network_error 1 -reconnect_delay_max 5";
+    cmd += " -user_agent \"Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 Version/18.5 Mobile/15E148 Safari/604.1\"";
+    cmd += " -i \"" + track.stream_url + "\"";
     std::string filter_chain = build_filter_chain();
     cmd += " -filter:a \"" + filter_chain + "\" -f s16le -ar 48000 -ac 2 -loglevel quiet pipe:1";
 
@@ -347,6 +349,12 @@ void AudioStreamer::streaming_loop(Track track, int start_offset_sec, int stream
         is_playing_ = false;
         return;
     }
+
+#ifdef __linux__
+    // Expand pipe buffer from 64 KB (340ms) to 1 MB (5.4s) to absorb network jitter
+    fcntl(pipefd[0], F_SETPIPE_SZ, 1048576);
+    fcntl(pipefd[1], F_SETPIPE_SZ, 1048576);
+#endif
 
     pid_t pid = fork();
     if (pid == -1) {
@@ -377,20 +385,23 @@ void AudioStreamer::streaming_loop(Track track, int start_offset_sec, int stream
         }
 
         arg_list.push_back("-probesize");
-        arg_list.push_back("32768");
+        arg_list.push_back("1048576");
         arg_list.push_back("-analyzeduration");
-        arg_list.push_back("100000");
-        arg_list.push_back("-fflags");
-        arg_list.push_back("nobuffer+fastseek");
-        arg_list.push_back("-flags");
-        arg_list.push_back("low_delay");
+        arg_list.push_back("2000000");
 
         arg_list.push_back("-reconnect");
         arg_list.push_back("1");
         arg_list.push_back("-reconnect_streamed");
         arg_list.push_back("1");
+        arg_list.push_back("-reconnect_at_eof");
+        arg_list.push_back("1");
+        arg_list.push_back("-reconnect_on_network_error");
+        arg_list.push_back("1");
         arg_list.push_back("-reconnect_delay_max");
-        arg_list.push_back("2");
+        arg_list.push_back("5");
+
+        arg_list.push_back("-user_agent");
+        arg_list.push_back("Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 Version/18.5 Mobile/15E148 Safari/604.1");
 
         arg_list.push_back("-i");
         arg_list.push_back(track.stream_url);
@@ -451,7 +462,11 @@ void AudioStreamer::streaming_loop(Track track, int start_offset_sec, int stream
             }
 #else
             ssize_t n = read(pipefd[0], byte_ptr + bytes_read, BYTES_PER_FRAME - bytes_read);
-            if (n <= 0) {
+            if (n < 0) {
+                if (errno == EINTR) continue;
+                break;
+            }
+            if (n == 0) {
                 break;
             }
 #endif

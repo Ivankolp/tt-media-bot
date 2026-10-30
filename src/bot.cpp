@@ -1510,7 +1510,7 @@ void Bot::cmd_download(const TextMessage& msg, const std::string& arg) {
         if (safe_title.empty()) safe_title = "track";
         std::string local_path = "/tmp/" + safe_title + ".mp3";
 
-        std::string cmd = "ffmpeg -y -i \"" + t.stream_url + "\" -vn -threads 2 -t 900 -c:a libmp3lame -b:a 192k \"" + local_path + "\" >/dev/null 2>&1";
+        std::string cmd = "ffmpeg -y -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_on_network_error 1 -reconnect_delay_max 5 -user_agent \"Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 Version/18.5 Mobile/15E148 Safari/604.1\" -i \"" + t.stream_url + "\" -vn -threads 2 -t 900 -c:a libmp3lame -b:a 192k \"" + local_path + "\" >/dev/null 2>&1";
         LOG_INFO("[Download] Starting ffmpeg conversion for '%s'...", safe_title.c_str());
         std::system(cmd.c_str());
 

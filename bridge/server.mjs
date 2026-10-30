@@ -380,36 +380,38 @@ function playabilityDescription(info) {
   return reason ? `${status}: ${reason}` : status;
 }
 
+function isDegradedNode(nodeName) {
+  if (!nodeName || typeof nodeName !== 'string') return false;
+  // Russian ISP GGC nodes that are throttled/blocked by RKN
+  return /gvnux|vgqsrn|q4fl6n|h557sn|n8v7kn|-axq/i.test(nodeName);
+}
+
 function bypassDegradedGgc(streamUrl) {
   if (!streamUrl || typeof streamUrl !== 'string') return streamUrl;
   try {
     const u = new URL(streamUrl);
     const host = u.hostname;
-    // Degraded GGC edge nodes have ISP hyphens e.g. sn-gvnuxaxjvh-axqz, sn-gvnuxaxjvh-axqd
-    // or known Russian throttling ISP signatures (sn-gvnux, sn-vgqsrn, sn-q4fl6n, sn-h557sn, sn-n8v7kn, etc.)
-    const isDegradedGgc = /sn-[a-z0-9]+-[a-z0-9]+/i.test(host) || /sn-gvnux/i.test(host);
-    if (!isDegradedGgc) return streamUrl;
+    const match = host.match(/sn-[^.]+/);
+    if (!match) return streamUrl;
+    const currentNode = match[0];
+
+    if (!isDegradedNode(currentNode)) return streamUrl;
 
     const mn = u.searchParams.get('mn');
     if (!mn) return streamUrl;
 
     const nodes = mn.split(',').map((s) => s.trim()).filter(Boolean);
-    // Find first fallback node that is a direct Google backbone node (no extra hyphen)
-    const healthyNode = nodes.find((node) => !/sn-[a-z0-9]+-[a-z0-9]+/i.test(node) && !/sn-gvnux/i.test(node));
+    // Find first healthy node present in the signed mn list
+    const healthyNode = nodes.find((node) => node !== currentNode && !isDegradedNode(node));
     if (healthyNode) {
-      const oldHost = u.hostname;
-      u.hostname = oldHost.replace(/sn-[^.]*/, healthyNode);
-      console.log(`[youtube-bridge] Re-routed degraded GGC host ${oldHost} -> ${u.hostname}`);
+      u.hostname = host.replace(currentNode, healthyNode);
+      console.log(`[youtube-bridge] Re-routed degraded node ${currentNode} -> ${healthyNode} (${u.hostname})`);
       return u.toString();
     }
-    const oldHost = u.hostname;
-    u.hostname = oldHost.replace(/sn-[^.]*/, 'sn-u15hn5-5m');
-    console.log(`[youtube-bridge] Forced EU backbone fallback ${oldHost} -> ${u.hostname}`);
-    return u.toString();
   } catch (err) {
     console.warn(`[youtube-bridge] bypassDegradedGgc error: ${err.message}`);
-    return streamUrl;
   }
+  return streamUrl;
 }
 
 async function resolveFormat(context, videoId, requestedClient, formatOptions) {

@@ -95,6 +95,11 @@ bool Bot::init() {
             config_.channel_path = saved_chan;
         }
 
+        std::string saved_pw = db_->get_setting("channel_password");
+        if (!saved_pw.empty()) {
+            config_.channel_password = saved_pw;
+        }
+
         std::string saved_gender = db_->get_setting("gender");
         if (!saved_gender.empty()) {
             config_.gender = saved_gender;
@@ -291,6 +296,17 @@ void Bot::process_event(const TTMessage& msg) {
         case CLIENTEVENT_CMD_ERROR: {
             LOG_ERR("[Bot] Command error (cmd_id=%d, err_code=%d): %s",
                     msg.nSource, msg.clienterrormsg.nErrorNo, msg.clienterrormsg.szErrorMsg);
+            if (msg.clienterrormsg.nErrorNo == 2001 || msg.clienterrormsg.nErrorNo == 2000) {
+                // Channel join failed (incorrect password or channel does not exist) — fallback to root Lobby channel 1
+                LOG_ERR("[Bot] Channel join failed, falling back to root Lobby channel 1...");
+                config_.channel_path = "1";
+                config_.channel_password = "";
+                if (db_) {
+                    db_->set_setting("channel_path", "1");
+                    db_->set_setting("channel_password", "");
+                }
+                TT_DoJoinChannelByID(tt_, 1, "");
+            }
             break;
         }
         default:
